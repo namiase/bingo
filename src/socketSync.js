@@ -9,7 +9,12 @@ function getBackendUrl() {
   const fromEnv = import.meta.env.VITE_BACKEND_URL;
   if (fromEnv) return fromEnv;
 
-  // Usar misma IP/host que la página, pero puerto 4000
+  // Si no hay variable definida, asumimos entorno local
+  // y usamos localhost:4000 como backend por defecto.
+  // En producción (Netlify), deberías definir VITE_BACKEND_URL
+  // apuntando a https://bingo-sous.onrender.com
+
+  // Usar misma IP/host que la página, pero puerto 4000 (modo dev)
   try {
     const url = new URL(window.location.href);
     url.port = "4000";
