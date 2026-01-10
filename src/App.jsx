@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { connectToRoom } from "./socketSync";
 
 const range = (start, end) =>
   Array.from({ length: end - start + 1 }, (_, i) => start + i);
@@ -19,6 +20,12 @@ const shuffle = (arr) => {
   return a;
 };
 
+const getRoomIdFromLocation = () => {
+  if (typeof window === "undefined") return "default";
+  const hash = window.location.hash.replace("#", "").trim();
+  return hash || "default";
+};
+
 export default function App() {
   const allNumbers = useMemo(() => range(1, 75), []);
   const [queue, setQueue] = useState(() => shuffle(allNumbers));
@@ -30,6 +37,54 @@ export default function App() {
   const [selectedVoiceURI, setSelectedVoiceURI] = useState(null);
   const [cornerInitial, setCornerInitial] = useState("");
   const [cornerNumber, setCornerNumber] = useState(null);
+  const roomIdRef = useRef(null);
+  const isApplyingRemoteRef = useRef(false);
+  const syncRef = useRef(null);
+
+  const applyRemoteState = (data) => {
+    if (!data) return;
+
+    if (Array.isArray(data.queue)) {
+      setQueue(data.queue);
+    }
+    if (typeof data.calledCount === "number") {
+      setCalledCount(data.calledCount);
+    }
+    if (Array.isArray(data.calledArray)) {
+      setCalledSet(new Set(data.calledArray));
+    }
+    if (typeof data.current === "number" || data.current === null) {
+      setCurrent(data.current);
+    }
+    if (typeof data.cornerInitial === "string") {
+      setCornerInitial(data.cornerInitial);
+    }
+    if (typeof data.cornerNumber === "number" || data.cornerNumber === null) {
+      setCornerNumber(data.cornerNumber);
+    }
+  };
+
+  // Conectar al backend de WebSockets y suscribirnos a la sala
+  useEffect(() => {
+    const roomId = getRoomIdFromLocation();
+    roomIdRef.current = roomId;
+    const sync = connectToRoom(roomId, (data) => {
+      isApplyingRemoteRef.current = true;
+      try {
+        applyRemoteState(data);
+      } finally {
+        isApplyingRemoteRef.current = false;
+      }
+    });
+    syncRef.current = sync;
+
+    return () => {
+      if (syncRef.current) {
+        syncRef.current.disconnect();
+        syncRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -113,19 +168,54 @@ export default function App() {
   const singNext = () => {
     if (calledCount >= 75) return;
     const next = queue[calledCount];
+    const newCalledCount = calledCount + 1;
+    const newCalledSet = new Set(calledSet);
+    newCalledSet.add(next);
+
     setCurrent(next);
-    setCalledCount((c) => c + 1);
-    setCalledSet((prev) => new Set(prev).add(next));
+    setCalledCount(newCalledCount);
+    setCalledSet(newCalledSet);
+
+    if (!isApplyingRemoteRef.current) {
+      const payload = {
+        queue,
+        calledCount: newCalledCount,
+        calledArray: Array.from(newCalledSet),
+        current: next,
+        cornerInitial,
+        cornerNumber,
+      };
+      if (syncRef.current) {
+        syncRef.current.sendState(payload);
+      }
+    }
     speakNumber(next);
   };
 
   const resetGame = () => {
-    setQueue(shuffle(allNumbers));
+    const newQueue = shuffle(allNumbers);
+    const newCalledSet = new Set();
+
+    setQueue(newQueue);
     setCalledCount(0);
-    setCalledSet(new Set());
+    setCalledSet(newCalledSet);
     setCurrent(null);
     setCornerInitial("");
     setCornerNumber(null);
+
+    if (!isApplyingRemoteRef.current) {
+      const payload = {
+        queue: newQueue,
+        calledCount: 0,
+        calledArray: [],
+        current: null,
+        cornerInitial: "",
+        cornerNumber: null,
+      };
+      if (syncRef.current) {
+        syncRef.current.sendState(payload);
+      }
+    }
   };
 
   const handleCorner = () => {
@@ -150,6 +240,20 @@ export default function App() {
 
     setCornerInitial(letter);
     setCornerNumber(current);
+
+    if (!isApplyingRemoteRef.current) {
+      const payload = {
+        queue,
+        calledCount,
+        calledArray: Array.from(calledSet),
+        current,
+        cornerInitial: letter,
+        cornerNumber: current,
+      };
+      if (syncRef.current) {
+        syncRef.current.sendState(payload);
+      }
+    }
   };
 
   const disabled = calledCount >= 75;
