@@ -32,6 +32,7 @@ export default function App() {
   const [calledCount, setCalledCount] = useState(0);
   const [calledSet, setCalledSet] = useState(() => new Set());
   const [current, setCurrent] = useState(null);
+  const [previous, setPrevious] = useState(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [voices, setVoices] = useState([]);
   const [selectedVoiceURI, setSelectedVoiceURI] = useState(null);
@@ -55,6 +56,9 @@ export default function App() {
     }
     if (typeof data.current === "number" || data.current === null) {
       setCurrent(data.current);
+    }
+    if (typeof data.previous === "number" || data.previous === null) {
+      setPrevious(data.previous);
     }
     if (typeof data.cornerInitial === "string") {
       setCornerInitial(data.cornerInitial);
@@ -168,10 +172,12 @@ export default function App() {
   const singNext = () => {
     if (calledCount >= 75) return;
     const next = queue[calledCount];
+    const prevCurrent = current;
     const newCalledCount = calledCount + 1;
     const newCalledSet = new Set(calledSet);
     newCalledSet.add(next);
 
+    setPrevious(prevCurrent);
     setCurrent(next);
     setCalledCount(newCalledCount);
     setCalledSet(newCalledSet);
@@ -182,6 +188,7 @@ export default function App() {
         calledCount: newCalledCount,
         calledArray: Array.from(newCalledSet),
         current: next,
+        previous: prevCurrent,
         cornerInitial,
         cornerNumber,
       };
@@ -200,6 +207,7 @@ export default function App() {
     setCalledCount(0);
     setCalledSet(newCalledSet);
     setCurrent(null);
+    setPrevious(null);
     setCornerInitial("");
     setCornerNumber(null);
 
@@ -209,6 +217,7 @@ export default function App() {
         calledCount: 0,
         calledArray: [],
         current: null,
+        previous: null,
         cornerInitial: "",
         cornerNumber: null,
       };
@@ -247,6 +256,7 @@ export default function App() {
         calledCount,
         calledArray: Array.from(calledSet),
         current,
+        previous,
         cornerInitial: letter,
         cornerNumber: current,
       };
@@ -256,7 +266,7 @@ export default function App() {
     }
   };
 
-  const disabled = calledCount >= 75;
+  const isDisabled = calledCount >= 75;
 
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -279,13 +289,16 @@ export default function App() {
                   {current ?? "—"}
                 </div>
               </div>
+              <div className="mt-2 flex justify-end pr-2 text-slate-200 text-sm">
+                <span className="opacity-80">Anterior: {previous ?? "—"}</span>
+              </div>
             </div>
 
             <div className="flex items-center gap-3 w-full mt-1">
               <button
                 id="nextBtn"
                 onClick={singNext}
-                disabled={disabled}
+                disabled={isDisabled}
                 className="flex-1 py-4 text-xl font-semibold rounded-lg bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] transition disabled:bg-slate-600 disabled:cursor-not-allowed"
               >
                 Cantar Siguiente Número
@@ -344,7 +357,7 @@ export default function App() {
               </div>
             </div>
             <p id="status" className="mt-2 text-center text-slate-300">
-              {disabled
+              {isDisabled
                 ? "Juego terminado: se cantaron todos los números (1–75)."
                 : ""}
             </p>
@@ -360,12 +373,18 @@ export default function App() {
                   </div>
                   {nums.map((n) => {
                     const isCalled = calledSet.has(n);
+                    const isCurrent = current === n;
+                    const isPrevious = previous === n;
                     return (
                       <div
                         key={n}
                         className={
                           `w-24 text-center py-1 rounded-md font-semibold text-5xl lg:text-5xl ` +
-                          (isCalled
+                          (isCurrent
+                            ? "bg-red-500 text-black"
+                            : isPrevious
+                            ? "bg-orange-400 text-black"
+                            : isCalled
                             ? "bg-emerald-500 text-black"
                             : "bg-slate-700 text-white")
                         }
