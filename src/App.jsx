@@ -38,6 +38,8 @@ export default function App() {
   const [selectedVoiceURI, setSelectedVoiceURI] = useState(null);
   const [cornerInitial, setCornerInitial] = useState("");
   const [cornerNumber, setCornerNumber] = useState(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [hasWinner, setHasWinner] = useState(false);
   const roomIdRef = useRef(null);
   const isApplyingRemoteRef = useRef(false);
   const syncRef = useRef(null);
@@ -65,6 +67,12 @@ export default function App() {
     }
     if (typeof data.cornerNumber === "number" || data.cornerNumber === null) {
       setCornerNumber(data.cornerNumber);
+    }
+    if (typeof data.isPaused === "boolean") {
+      setIsPaused(data.isPaused);
+    }
+    if (typeof data.hasWinner === "boolean") {
+      setHasWinner(data.hasWinner);
     }
   };
 
@@ -170,6 +178,8 @@ export default function App() {
   ];
 
   const singNext = () => {
+    // Bloquear canto cuando hay pausa o ganador
+    if (isPaused || hasWinner) return;
     if (calledCount >= 75) return;
     const next = queue[calledCount];
     const prevCurrent = current;
@@ -191,6 +201,8 @@ export default function App() {
         previous: prevCurrent,
         cornerInitial,
         cornerNumber,
+        isPaused,
+        hasWinner,
       };
       if (syncRef.current) {
         syncRef.current.sendState(payload);
@@ -198,6 +210,18 @@ export default function App() {
     }
     speakNumber(next);
   };
+
+  // Canto automático cada 5 segundos cuando no está pausado, no hay ganador y quedan números
+  useEffect(() => {
+    const disabledNow = calledCount >= 75;
+    if (isPaused || hasWinner || disabledNow) return;
+
+    const id = setInterval(() => {
+      singNext();
+    }, 10000);
+
+    return () => clearInterval(id);
+  }, [isPaused, hasWinner, calledCount, queue]);
 
   const resetGame = () => {
     const newQueue = shuffle(allNumbers);
@@ -210,6 +234,8 @@ export default function App() {
     setPrevious(null);
     setCornerInitial("");
     setCornerNumber(null);
+    setIsPaused(false);
+    setHasWinner(false);
 
     if (!isApplyingRemoteRef.current) {
       const payload = {
@@ -220,6 +246,51 @@ export default function App() {
         previous: null,
         cornerInitial: "",
         cornerNumber: null,
+        isPaused: false,
+        hasWinner: false,
+      };
+      if (syncRef.current) {
+        syncRef.current.sendState(payload);
+      }
+    }
+  };
+
+  const togglePause = () => {
+    const nextPaused = !isPaused;
+    setIsPaused(nextPaused);
+    if (!isApplyingRemoteRef.current) {
+      const payload = {
+        queue,
+        calledCount,
+        calledArray: Array.from(calledSet),
+        current,
+        previous,
+        cornerInitial,
+        cornerNumber,
+        isPaused: nextPaused,
+        hasWinner,
+      };
+      if (syncRef.current) {
+        syncRef.current.sendState(payload);
+      }
+    }
+  };
+
+  const declareWinner = () => {
+    // Marcar ganador y pausar definitivamente hasta reiniciar
+    setHasWinner(true);
+    setIsPaused(true);
+    if (!isApplyingRemoteRef.current) {
+      const payload = {
+        queue,
+        calledCount,
+        calledArray: Array.from(calledSet),
+        current,
+        previous,
+        cornerInitial,
+        cornerNumber,
+        isPaused: true,
+        hasWinner: true,
       };
       if (syncRef.current) {
         syncRef.current.sendState(payload);
@@ -298,10 +369,24 @@ export default function App() {
               <button
                 id="nextBtn"
                 onClick={singNext}
-                disabled={isDisabled}
+                disabled={isDisabled || isPaused || hasWinner}
                 className="flex-1 py-4 text-xl font-semibold rounded-lg bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] transition disabled:bg-slate-600 disabled:cursor-not-allowed"
               >
                 Cantar Siguiente Número
+              </button>
+              <button
+                onClick={togglePause}
+                disabled={hasWinner}
+                className="px-4 py-4 text-xl font-semibold rounded-lg bg-yellow-500 hover:bg-yellow-600 active:scale-[0.99] transition disabled:bg-slate-600 disabled:cursor-not-allowed"
+              >
+                {isPaused ? "Reanudar" : "Pausar"}
+              </button>
+              <button
+                onClick={declareWinner}
+                disabled={hasWinner}
+                className="px-4 py-4 text-xl font-semibold rounded-lg bg-purple-500 hover:bg-purple-600 active:scale-[0.99] transition disabled:bg-slate-600 disabled:cursor-not-allowed"
+              >
+                Ganador
               </button>
               <button
                 onClick={handleCorner}
@@ -357,7 +442,11 @@ export default function App() {
               </div>
             </div>
             <p id="status" className="mt-2 text-center text-slate-300">
-              {isDisabled
+              {hasWinner
+                ? "Juego terminado: hay un ganador."
+                : isPaused
+                ? "Canto en pausa."
+                : isDisabled
                 ? "Juego terminado: se cantaron todos los números (1–75)."
                 : ""}
             </p>
